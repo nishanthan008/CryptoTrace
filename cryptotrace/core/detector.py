@@ -6,55 +6,70 @@ from ..patterns.crypto_patterns import ALL_PATTERNS
 from ..patterns.libraries import detect_crypto_libraries, is_weak_algorithm
 import re
 
+from .ast_analyzer import ASTAnalyzer
+
 class Detector:
     """
-    Analyzes collected data for cryptographic materials and patterns
+    Analyzes collected data for cryptographic materials and patterns.
+    Uses generic Regex for non-JS files and AST analysis for JS files.
     """
     
     def __init__(self):
-        pass
+        self.ast_analyzer = ASTAnalyzer()
 
     def scan_content(self, content, location_info):
         """
-        Scan a single string of content for all patterns
-        
-        Args:
-            content (str): The content to scan (e.g., JS file source)
-            location_info (dict): Metadata about origin (e.g., url, type)
-            
-        Returns:
-            list: List of finding dicts
+        Scan a single string of content for patterns.
+        Dispatches to AST analysis if content appears to be JavaScript.
         """
         findings = []
+        is_js = False
         
-        # 1. Regex Pattern Matching
-        for category, patterns in ALL_PATTERNS.items():
-            for name, info in patterns.items():
-                regex = re.compile(info['pattern'], re.IGNORECASE | re.MULTILINE)
-                for match in regex.finditer(content):
-                    # Basic line number estimation
-                    start_pos = match.start()
-                    line_no = content.count('\n', 0, start_pos) + 1
-                    
-                    finding = {
-                        "category": category,
-                        "pattern_name": name,
-                        "severity": info['severity'],
-                        "description": info['description'],
-                        "cwe": info['cwe'],
-                        "evidence": match.group(0),
-                        "location": {
-                            "url": location_info.get('url'),
-                            "line": line_no,
-                            "type": location_info.get('type')
-                        }
-                    }
-                    findings.append(finding)
+        url = location_info.get('url', '')
+        if url.endswith('.js') or location_info.get('type') == 'script':
+            is_js = True
 
-        # 2. Library Detection
+        # 1. AST Analysis (Preferred for JS)
+        if is_js:
+            ast_findings = self.ast_analyzer.analyze(content, url)
+            for f in ast_findings:
+                # normalize location
+                f['location'] = {
+                     "url": url,
+                     "line": f.get('line', 0),
+                     "type": location_info.get('type')
+                }
+                findings.append(f)
+        
+        # 2. Regex Pattern Matching (Fallback or Supplemental)
+        # STRICT REQUIREMENT: "The detection engine must not rely on keyword or variable-name matching."
+        # If AST was used (is_js), we disable ALL regex scans to eliminate false positives entirely.
+        if not is_js:
+            for category, patterns in ALL_PATTERNS.items():
+                for name, info in patterns.items():
+                    regex = re.compile(info['pattern'], re.IGNORECASE | re.MULTILINE)
+                    for match in regex.finditer(content):
+                        start_pos = match.start()
+                        line_no = content.count('\n', 0, start_pos) + 1
+                        
+                        finding = {
+                            "category": category,
+                            "pattern_name": name,
+                            "severity": info['severity'],
+                            "description": info['description'],
+                            "cwe": info['cwe'],
+                            "evidence": match.group(0),
+                            "location": {
+                                "url": location_info.get('url'),
+                                "line": line_no,
+                                "type": location_info.get('type')
+                            }
+                        }
+                        findings.append(finding)
+
+        # 3. Library Detection
         libs = detect_crypto_libraries(content)
         if libs:
-            # Add a finding for detected libraries
             finding = {
                 "category": "library_detection",
                 "pattern_name": "crypto_library",
@@ -64,6 +79,7 @@ class Detector:
                 "evidence": f"Libraries: {libs}",
                 "location": {
                     "url": location_info.get('url'),
+                    "line": 0,
                     "type": location_info.get('type')
                 }
             }

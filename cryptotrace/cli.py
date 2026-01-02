@@ -100,7 +100,7 @@ async def run_scan(args):
             
         # 4. Analyze & Correlate
         print(f"[*] Correlating {len(all_findings)} potential findings...")
-        analyzed_findings = analyzer.process_findings(all_findings)
+        analyzed_findings = analyzer.process_findings(all_findings, min_confidence=args.min_confidence)
         summary = analyzer.generate_summary(analyzed_findings)
         
         # 5. Report
@@ -183,6 +183,7 @@ def main():
     scan_parser.add_argument("--detect-keys", action="store_true", help="Detect encryption keys")
     scan_parser.add_argument("--detect-iv", action="store_true", help="Detect IV usage")
     scan_parser.add_argument("--detect-algorithms", action="store_true", help="Identify algorithms")
+    scan_parser.add_argument("--min-confidence", default=5, type=int, help="Minimum confidence threshold (1-10, default: 5)")
 
     args = parser.parse_args()
     

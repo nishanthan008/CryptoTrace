@@ -12,33 +12,44 @@ class Analyzer:
     def __init__(self, redactor=None):
         self.redactor = redactor or Redactor()
         
-    def process_findings(self, raw_findings):
+    def process_findings(self, raw_findings, min_confidence=5):
         """
-        Deduplicate, clean, and analyze findings
+        Deduplicate, clean, and filter findings by confidence
         """
         processed = []
         seen = set()
         
         for finding in raw_findings:
-            # Create a unique hash for deduplication
-            # Using location + description + evidence snippet
+            # 1. Confidence Filtering
+            conf = finding.get('confidence', 5) # Default 5 if not specified
+            if isinstance(conf, str):
+                conf = 10 if conf == 'High' else 5
+            
+            if conf < min_confidence:
+                continue
+
+            # 2. Unique Hash for Deduplication
             unique_key = f"{finding.get('description')}:{finding['location'].get('url')}:{finding['location'].get('line', '')}"
             
             if unique_key in seen:
                 continue
             seen.add(unique_key)
             
-            # Enrich finding
+            # 3. Risk Scoring (Multiplied by Confidence/10)
+            base_score = 0
             if finding['severity'] == 'CRITICAL':
-                finding['risk_score'] = 10
+                base_score = 10
             elif finding['severity'] == 'HIGH':
-                finding['risk_score'] = 8
+                base_score = 8
             elif finding['severity'] == 'MEDIUM':
-                finding['risk_score'] = 5
+                base_score = 5
             else:
-                finding['risk_score'] = 1
+                base_score = 1
+            
+            finding['risk_score'] = round(base_score * (conf / 10.0))
+            finding['confidence'] = conf
                 
-            # Add OWASP mapping if missing (defaults in patterns)
+            # Add OWASP mapping if missing
             if 'owasp' not in finding:
                  finding['owasp'] = "A02:2021 – Cryptographic Failures"
 
