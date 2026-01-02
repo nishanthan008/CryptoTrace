@@ -131,6 +131,45 @@ WEBCRYPTO_PATTERNS = {
         'description': 'Web Crypto API key derivation',
         'severity': 'MEDIUM',
         'cwe': 'CWE-327'
+    },
+    # Looser patterns for minified/bundled code
+    'generic_encrypt': {
+        'pattern': r'\.encrypt\s*\(',
+        'description': 'Generic encryption method call (potential library)',
+        'severity': 'LOW',
+        'cwe': 'CWE-327'
+    },
+    'generic_decrypt': {
+        'pattern': r'\.decrypt\s*\(',
+        'description': 'Generic decryption method call (potential library)',
+        'severity': 'LOW',
+        'cwe': 'CWE-327'
+    }
+}
+
+# Variable name patterns (potential secrets in code)
+VARIABLE_NAME_PATTERNS = {
+    'secret_var': {
+        'pattern': r'(?:var|let|const)\s+[a-zA-Z0-9_$]*(?:secret|key|token|auth|pass)[a-zA-Z0-9_$]*\s*=',
+        'description': 'Variable name suggesting secret storage',
+        'severity': 'MEDIUM',
+        'cwe': 'CWE-798'
+    },
+    'api_key_var': {
+         'pattern': r'(?:var|let|const)\s+[a-zA-Z0-9_$]*(?:apiKey|ApiKey|API_KEY)[a-zA-Z0-9_$]*\s*=',
+         'description': 'Variable name suggesting API key',
+         'severity': 'MEDIUM',
+         'cwe': 'CWE-798'
+    }
+}
+
+# Environment variable usage in frontend code
+ENV_VAR_PATTERNS = {
+    'process_env': {
+        'pattern': r'process\.env\.[a-zA-Z0-9_]+',
+        'description': 'Accessing process.env in client-side code (potential leak)',
+        'severity': 'LOW',
+        'cwe': 'CWE-200'
     }
 }
 
@@ -271,7 +310,9 @@ ALL_PATTERNS = {
     'encoding': ENCODING_PATTERNS,
     'kdf': KDF_PATTERNS,
     'client_side': CLIENT_SIDE_PATTERNS,
-    'jwt': JWT_PATTERNS
+    'jwt': JWT_PATTERNS,
+    'variables': VARIABLE_NAME_PATTERNS,
+    'env_vars': ENV_VAR_PATTERNS
 }
 
 def compile_patterns():

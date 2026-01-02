@@ -55,7 +55,7 @@ async def run_scan(args):
         print("[*] Launching browser environment...")
         await runtime.launch_browser(auth_handler=auth_handler)
         
-        collector_task = collector.start_monitoring()
+        collector_task = await collector.start_monitoring()
         
         print(f"[*] Navigating to {args.url}...")
         response = await runtime.navigate(args.url)
@@ -159,38 +159,45 @@ async def run_scan(args):
 
 def main():
     parser = argparse.ArgumentParser(description="CryptoTrace - Web Crypto Security Scanner")
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    # Scan Command
+    scan_parser = subparsers.add_parser("scan", help="Start a new security scan")
     
-    # Required
-    parser.add_argument("--url", required=True, help="Target application URL")
-    parser.add_argument("--authorized", action="store_true", required=True, help="Explicit authorization acknowledgment")
+    # Required for scan
+    scan_parser.add_argument("--url", required=True, help="Target application URL")
+    scan_parser.add_argument("--authorized", action="store_true", required=True, help="Explicit authorization acknowledgment")
     
-    # Options
-    parser.add_argument("--auth", help="Authentication context file (JSON)")
-    parser.add_argument("--headless", action="store_true", default=True, help="Run browser in headless mode (default: True)")
-    parser.add_argument("--no-headless", action="store_false", dest="headless", help="Run browser in visible mode")
-    parser.add_argument("--capture-network", action="store_true", default=True, help="Capture HTTP/HTTPS traffic")
-    parser.add_argument("--capture-runtime", action="store_true", default=True, help="Observe crypto functions at runtime")
-    parser.add_argument("--timeout", default=300, type=int, help="Scan timeout in seconds")
-    parser.add_argument("--report", default="json", help="Output format (json, sarif, markdown)")
-    parser.add_argument("--output", help="Save report to file path")
-    parser.add_argument("--no-redact-secrets", action="store_true", help="Disable secret redaction (DANGEROUS)")
+    # Options for scan
+    scan_parser.add_argument("--auth", help="Authentication context file (JSON)")
+    scan_parser.add_argument("--headless", action="store_true", default=True, help="Run browser in headless mode (default: True)")
+    scan_parser.add_argument("--no-headless", action="store_false", dest="headless", help="Run browser in visible mode")
+    scan_parser.add_argument("--capture-network", action="store_true", default=True, help="Capture HTTP/HTTPS traffic")
+    scan_parser.add_argument("--capture-runtime", action="store_true", default=True, help="Observe crypto functions at runtime")
+    scan_parser.add_argument("--timeout", default=300, type=int, help="Scan timeout in seconds")
+    scan_parser.add_argument("--report", default="json", help="Output format (json, sarif, markdown)")
+    scan_parser.add_argument("--output", help="Save report to file path")
+    scan_parser.add_argument("--no-redact-secrets", action="store_true", help="Disable secret redaction (DANGEROUS)")
     
-    # Detection Toggles (Enable all by default for MVP simplicity, or filter if flags provided)
-    parser.add_argument("--detect-keys", action="store_true", help="Detect encryption keys")
-    parser.add_argument("--detect-iv", action="store_true", help="Detect IV usage")
-    parser.add_argument("--detect-algorithms", action="store_true", help="Identify algorithms")
+    # Detection Toggles
+    scan_parser.add_argument("--detect-keys", action="store_true", help="Detect encryption keys")
+    scan_parser.add_argument("--detect-iv", action="store_true", help="Detect IV usage")
+    scan_parser.add_argument("--detect-algorithms", action="store_true", help="Identify algorithms")
 
     args = parser.parse_args()
     
-    if not args.authorized:
-        print("ERROR: --authorized flag is required. You must have explicit permission to scan the target.")
-        sys.exit(1)
+    if args.command == "scan":
+        if not args.authorized:
+            print("ERROR: --authorized flag is required. You must have explicit permission to scan the target.")
+            sys.exit(1)
 
-    if sys.platform == 'win32':
-        # Windows specific event loop policy
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        if sys.platform == 'win32':
+            # Windows specific event loop policy
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-    asyncio.run(run_scan(args))
+        asyncio.run(run_scan(args))
+    else:
+        parser.print_help()
 
 if __name__ == "__main__":
     main()

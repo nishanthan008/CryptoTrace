@@ -52,10 +52,39 @@ class RuntimeController:
                     return originalEncrypt.apply(this, arguments);
                 };
 
+                const originalDecrypt = window.crypto.subtle.decrypt;
+                window.crypto.subtle.decrypt = async function(algorithm, key, data) {
+                    logObservation('webcrypto_decrypt', {
+                        algorithm: algorithm,
+                        key_usages: key.usages,
+                        key_algorithm: key.algorithm,
+                        extractable: key.extractable
+                    });
+                    return originalDecrypt.apply(this, arguments);
+                };
+
+                const originalSign = window.crypto.subtle.sign;
+                window.crypto.subtle.sign = async function(algorithm, key, data) {
+                    logObservation('webcrypto_sign', {
+                        algorithm: algorithm,
+                        key_usages: key.usages,
+                        key_algorithm: key.algorithm
+                    });
+                    return originalSign.apply(this, arguments);
+                };
+                
+                 const originalVerify = window.crypto.subtle.verify;
+                window.crypto.subtle.verify = async function(algorithm, key, signature, data) {
+                    logObservation('webcrypto_verify', {
+                        algorithm: algorithm,
+                        key_usages: key.usages,
+                        key_algorithm: key.algorithm
+                    });
+                    return originalVerify.apply(this, arguments);
+                };
+
                 const originalImportKey = window.crypto.subtle.importKey;
                 window.crypto.subtle.importKey = async function(format, keyData, algorithm, extractable, keyUsages) {
-                    // Be careful not to log raw key material in observations if possible, 
-                    // or ensure it's handled safely. Ideally we just log the metadata here.
                     logObservation('webcrypto_importKey', {
                         format: format,
                         algorithm: algorithm,
@@ -64,8 +93,6 @@ class RuntimeController:
                     });
                     return originalImportKey.apply(this, arguments);
                 };
-                
-                // Add more hooks for decrypt, sign, verify, etc.
             }
             
             // Hook CryptoJS if available (poll for it or use Proxy if possible)
@@ -87,8 +114,23 @@ class RuntimeController:
                     }
                 }
             }, 500);
-
-        })();
+            
+            // Universal Library Detector
+            // Checks for common global objects associated with crypto libraries
+            const checkLibs = setInterval(() => {
+                const libs = [
+                    { name: 'Forge', check: () => window.forge && window.forge.cipher },
+                    { name: 'JSEncrypt', check: () => window.JSEncrypt },
+                    { name: 'SJCL', check: () => window.sjcl },
+                    { name: 'Sodium', check: () => window.sodium }
+                ];
+                
+                libs.forEach(lib => {
+                    if (lib.check()) {
+                         logObservation('library_detected', { name: lib.name });
+                    }
+                });
+            }, 1000);
         """
 
     async def launch_browser(self, auth_handler=None):
