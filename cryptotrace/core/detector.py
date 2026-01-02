@@ -81,10 +81,34 @@ class Detector:
             obs_type = obs.get('type')
             details = obs.get('details', {})
             
-            if obs_type == 'webcrypto_encrypt':
+            # 1. Web Crypto API: Encrypt/Decrypt/Generate/Import
+            if obs_type in ['webcrypto_encrypt', 'webcrypto_decrypt', 'webcrypto_importKey', 'webcrypto_generateKey']:
+                # Key Capture
+                captured_key = details.get('key_data') or details.get('captured_key') or details.get('generated_key')
+                if captured_key:
+                    findings.append({
+                        "category": "runtime_key_capture",
+                        "severity": "CRITICAL",
+                        "description": "Captured Cryptographic Key in clear text during runtime",
+                        "evidence": f"Key: {captured_key}",
+                        "cwe": "CWE-312",
+                        "location": {"type": "runtime", "stack": obs.get("stack")}
+                    })
+
+                # IV Capture
+                iv_hex = details.get('iv_hex')
+                if iv_hex:
+                     findings.append({
+                        "category": "runtime_iv_capture",
+                        "severity": "INFO",
+                        "description": "Captured Initialization Vector (IV)",
+                        "evidence": f"IV: {iv_hex}",
+                        "location": {"type": "runtime", "stack": obs.get("stack")}
+                    })
+                
+                # Weak Algorithm Analysis
                 algo = details.get('algorithm', {})
                 algo_name = algo.get('name') if isinstance(algo, dict) else algo
-                
                 is_weak, reason = is_weak_algorithm(str(algo_name))
                 if is_weak:
                     findings.append({
@@ -94,13 +118,32 @@ class Detector:
                         "details": reason,
                         "location": {"type": "runtime", "stack": obs.get("stack")}
                     })
-                
-                # Check for IV reuse if possible (requires state tracking, simple check here)
-                if 'iv' in algo:
-                    # Note: IV is typically ArrayBuffer, would need to be serialized in runtime_controller
-                    pass
 
+            # 2. CryptoJS Analysis
             if obs_type == 'cryptojs_aes_encrypt':
+                # Key Capture
+                key_hex = details.get('key_hex')
+                if key_hex:
+                    findings.append({
+                        "category": "runtime_key_capture",
+                        "severity": "CRITICAL",
+                        "description": "Captured CryptoJS Key in clear text",
+                        "evidence": f"Key: {key_hex}",
+                        "cwe": "CWE-312",
+                        "location": {"type": "runtime", "stack": obs.get("stack")}
+                    })
+
+                # IV Capture
+                iv_hex = details.get('iv_hex')
+                if iv_hex:
+                    findings.append({
+                        "category": "runtime_iv_capture",
+                        "severity": "INFO",
+                        "description": "Captured CryptoJS IV",
+                        "evidence": f"IV: {iv_hex}",
+                        "location": {"type": "runtime", "stack": obs.get("stack")}
+                    })
+
                 # Check mode
                 mode = details.get('mode', '')
                 if 'ECB' in mode:

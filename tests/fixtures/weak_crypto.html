@@ -1,52 +1,55 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Weak Crypto Test</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js"></script>
 </head>
+
 <body>
     <h1>Weak Crypto Test</h1>
     <script>
         // Pattern: Hardcoded Key
         var apiKey = "12345678901234567890123456789012";
-        
+
         // Pattern: Weak Algorithm (MD5)
         var hash = CryptoJS.MD5("message");
         console.log("MD5: " + hash);
 
-        // Pattern: Web Crypto API (Encrypt)
+        // Pattern: Web Crypto API (Encrypt) - EXTRACTABLE KEY
         async function robustEncrypt() {
             const key = await window.crypto.subtle.generateKey(
                 { name: "AES-GCM", length: 256 },
-                true,
+                true, // EXTRACTABLE!
                 ["encrypt", "decrypt"]
             );
             const iv = window.crypto.getRandomValues(new Uint8Array(12));
             const encoded = new TextEncoder().encode("Secret Message");
-            
+
             await window.crypto.subtle.encrypt(
-                { name: "AES-GCM", iv: iv },
+                { name: "AES-GCM", iv: iv }, // IV will be captured
                 key,
                 encoded
             );
         }
         robustEncrypt();
-        
+
         // Pattern: Client-side encryption before send
         function sendData() {
             const data = "Sensitive";
             // Mock encrypt
-            const encrypted = btoa(data); 
+            const encrypted = btoa(data);
             fetch('/api/submit', {
                 method: 'POST',
                 body: JSON.stringify({ payload: encrypted })
             });
         }
-        
+
         // Bundled/minified pattern simulation
-        var app={encrypt:function(x){return x}};
+        var app = { encrypt: function (x) { return x } };
         app.encrypt("test");
     </script>
 </body>
+
 </html>

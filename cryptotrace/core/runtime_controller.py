@@ -25,10 +25,16 @@ class RuntimeController:
         """
         Define scripts to inject for runtime monitoring of Crypto API
         """
-        # Monitoring script to hook into window.crypto and CryptoJS
         return """
         (() => {
             window.__crypto_observations = [];
+            
+            function bufferToHex(buffer) {
+                if (!buffer) return null;
+                return Array.from(new Uint8Array(buffer))
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+            }
             
             function logObservation(type, details) {
                 window.__crypto_observations.push({
@@ -41,62 +47,109 @@ class RuntimeController:
 
             // Hook Web Crypto API
             if (window.crypto && window.crypto.subtle) {
+                
+                // Helper to extract IV/Nonce from params
+                function extractIv(algo) {
+                    if (!algo) return null;
+                    if (algo.iv) return bufferToHex(algo.iv);
+                    if (algo.counter) return bufferToHex(algo.counter);
+                    if (algo.nonce) return bufferToHex(algo.nonce);
+                    return null;
+                }
+
                 const originalEncrypt = window.crypto.subtle.encrypt;
                 window.crypto.subtle.encrypt = async function(algorithm, key, data) {
+                    
+                    // Attempt to export key if extractable
+                    let keyData = null;
+                    if (key.extractable) {
+                         try {
+                            const raw = await window.crypto.subtle.exportKey("raw", key);
+                            keyData = bufferToHex(raw);
+                         } catch (e) {
+                             // Try JWK if raw fails
+                             try {
+                                 keyData = await window.crypto.subtle.exportKey("jwk", key);
+                             } catch(e2) {}
+                         }
+                    }
+
                     logObservation('webcrypto_encrypt', {
                         algorithm: algorithm,
+                        iv_hex: extractIv(algorithm),
                         key_usages: key.usages,
                         key_algorithm: key.algorithm,
-                        extractable: key.extractable
+                        extractable: key.extractable,
+                        key_data: keyData
                     });
                     return originalEncrypt.apply(this, arguments);
                 };
 
                 const originalDecrypt = window.crypto.subtle.decrypt;
                 window.crypto.subtle.decrypt = async function(algorithm, key, data) {
+                    let keyData = null;
+                    if (key.extractable) {
+                         try {
+                            const raw = await window.crypto.subtle.exportKey("raw", key);
+                            keyData = bufferToHex(raw);
+                         } catch (e) {}
+                    }
+                    
                     logObservation('webcrypto_decrypt', {
                         algorithm: algorithm,
+                        iv_hex: extractIv(algorithm),
                         key_usages: key.usages,
                         key_algorithm: key.algorithm,
-                        extractable: key.extractable
+                        extractable: key.extractable,
+                        key_data: keyData
                     });
                     return originalDecrypt.apply(this, arguments);
                 };
 
-                const originalSign = window.crypto.subtle.sign;
-                window.crypto.subtle.sign = async function(algorithm, key, data) {
-                    logObservation('webcrypto_sign', {
-                        algorithm: algorithm,
-                        key_usages: key.usages,
-                        key_algorithm: key.algorithm
-                    });
-                    return originalSign.apply(this, arguments);
-                };
-                
-                 const originalVerify = window.crypto.subtle.verify;
-                window.crypto.subtle.verify = async function(algorithm, key, signature, data) {
-                    logObservation('webcrypto_verify', {
-                        algorithm: algorithm,
-                        key_usages: key.usages,
-                        key_algorithm: key.algorithm
-                    });
-                    return originalVerify.apply(this, arguments);
-                };
-
                 const originalImportKey = window.crypto.subtle.importKey;
                 window.crypto.subtle.importKey = async function(format, keyData, algorithm, extractable, keyUsages) {
+                    let capturedKey = null;
+                    
+                    if (format === 'raw') {
+                        capturedKey = bufferToHex(keyData);
+                    } else if (format === 'jwk') {
+                        capturedKey = keyData;
+                    }
+
                     logObservation('webcrypto_importKey', {
                         format: format,
                         algorithm: algorithm,
                         extractable: extractable,
-                        usages: keyUsages
+                        usages: keyUsages,
+                        captured_key: capturedKey 
                     });
                     return originalImportKey.apply(this, arguments);
                 };
+                
+                const originalGenerateKey = window.crypto.subtle.generateKey;
+                window.crypto.subtle.generateKey = async function(algorithm, extractable, keyUsages) {
+                    const result = await originalGenerateKey.apply(this, arguments);
+                    
+                    // If extractable, grab it immediately
+                    if (extractable) {
+                        try {
+                            let keyToExport = result;
+                            // handle key pairs
+                            if (result.privateKey) keyToExport = result.privateKey; 
+                            
+                            const raw = await window.crypto.subtle.exportKey("jwk", keyToExport); 
+                            logObservation('webcrypto_generateKey', {
+                                algorithm: algorithm,
+                                extractable: extractable,
+                                generated_key: raw
+                            });
+                        } catch(e) {}
+                    }
+                    return result;
+                };
             }
             
-            // Hook CryptoJS if available (poll for it or use Proxy if possible)
-            // A simple polling mechanism to detect it loading
+            // Hook CryptoJS (IV and Key extraction)
             const checkCryptoJS = setInterval(() => {
                 if (window.CryptoJS) {
                     clearInterval(checkCryptoJS);
@@ -105,9 +158,17 @@ class RuntimeController:
                     if (window.CryptoJS.AES && window.CryptoJS.AES.encrypt) {
                          const originalAESEncrypt = window.CryptoJS.AES.encrypt;
                          window.CryptoJS.AES.encrypt = function(message, key, cfg) {
+                             
+                             let iv = null;
+                             if (cfg && cfg.iv) {
+                                 iv = cfg.iv.toString(); 
+                             }
+                             
                              logObservation('cryptojs_aes_encrypt', {
                                  mode: cfg && cfg.mode ? cfg.mode.name : 'unknown',
-                                 padding: cfg && cfg.padding ? cfg.padding.name : 'unknown'
+                                 padding: cfg && cfg.padding ? cfg.padding.name : 'unknown',
+                                 key_hex: key.toString(), 
+                                 iv_hex: iv
                              });
                              return originalAESEncrypt.apply(this, arguments);
                          }
@@ -116,7 +177,6 @@ class RuntimeController:
             }, 500);
             
             // Universal Library Detector
-            // Checks for common global objects associated with crypto libraries
             const checkLibs = setInterval(() => {
                 const libs = [
                     { name: 'Forge', check: () => window.forge && window.forge.cipher },
@@ -131,6 +191,8 @@ class RuntimeController:
                     }
                 });
             }, 1000);
+
+        })();
         """
 
     async def launch_browser(self, auth_handler=None):

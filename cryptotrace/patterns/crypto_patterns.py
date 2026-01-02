@@ -136,13 +136,13 @@ WEBCRYPTO_PATTERNS = {
     'generic_encrypt': {
         'pattern': r'\.encrypt\s*\(',
         'description': 'Generic encryption method call (potential library)',
-        'severity': 'LOW',
+        'severity': 'INFO', # Downgraded to INFO
         'cwe': 'CWE-327'
     },
     'generic_decrypt': {
         'pattern': r'\.decrypt\s*\(',
         'description': 'Generic decryption method call (potential library)',
-        'severity': 'LOW',
+        'severity': 'INFO', # Downgraded to INFO
         'cwe': 'CWE-327'
     }
 }
